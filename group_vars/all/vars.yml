@@ -2,6 +2,9 @@ infra_repo: LitterbinCollective/infra
 infra_branch: master
 infra_pull_timer: false
 
+github_app_id: 5670297
+github_app_installation_id: 179944023
+
 lb_backup_root: /var/backups/lb
 lb_keep_releases: 5
 
