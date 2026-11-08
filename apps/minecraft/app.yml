@@ -17,4 +17,4 @@ backup:
   before_deploy: true
   exclude: ["*/logs", "*/cache"]
   keep: 5
-cutover: false
+cutover: true
