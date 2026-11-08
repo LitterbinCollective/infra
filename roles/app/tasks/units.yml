@@ -1,0 +1,64 @@
+- name: Target
+  ansible.builtin.template:
+    src: target.j2
+    dest: "/etc/systemd/system/{{ app_target }}"
+    mode: "0644"
+  register: app_target_file
+
+- name: Unit files
+  ansible.builtin.template:
+    src: unit.service.j2
+    dest: "/etc/systemd/system/{{ u.file }}"
+    mode: "0644"
+  loop: "{{ app_units }}"
+  loop_control: { loop_var: u, label: "{{ u.file }}" }
+  register: app_unit_files
+
+- name: Override drop-in directories
+  ansible.builtin.file:
+    path: "/etc/systemd/system/{{ u.file }}.d"
+    state: directory
+    mode: "0755"
+  loop: "{{ app_units | selectattr('overrides') }}"
+  loop_control: { loop_var: u, label: "{{ u.file }}" }
+
+- name: Override drop-ins
+  ansible.builtin.template:
+    src: overrides.conf.j2
+    dest: "/etc/systemd/system/{{ u.file }}.d/50-overrides.conf"
+    mode: "0644"
+  loop: "{{ app_units | selectattr('overrides') }}"
+  loop_control: { loop_var: u, label: "{{ u.file }}" }
+  register: app_overrides
+
+- name: Remove stale override drop-ins
+  ansible.builtin.file:
+    path: "/etc/systemd/system/{{ u.file }}.d/50-overrides.conf"
+    state: absent
+  loop: "{{ app_units | rejectattr('overrides') }}"
+  loop_control: { loop_var: u, label: "{{ u.file }}" }
+  register: app_overrides_removed
+
+- name: Reload systemd
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+  when: app_target_file.changed or app_unit_files.changed or app_overrides.changed or app_overrides_removed.changed
+
+- name: Read drop-ins in effect  # noqa: command-instead-of-module
+  ansible.builtin.command: systemctl show -P DropInPaths {{ u.instances[0] }}
+  loop: "{{ app_units }}"
+  loop_control: { loop_var: u, label: "{{ u.instances[0] }}" }
+  register: app_dropins
+  changed_when: false
+
+- name: Shared hardening is in effect
+  ansible.builtin.assert:
+    that: "'/etc/systemd/system/lb-.service.d/10-hardening.conf' in r.stdout"
+    fail_msg: "{{ r.u.instances[0] }} does not pick up lb-.service.d/10-hardening.conf"
+    quiet: true
+  loop: "{{ app_dropins.results }}"
+  loop_control: { loop_var: r, label: "{{ r.u.instances[0] }}" }
+
+- name: Note whether units or config changed
+  ansible.builtin.set_fact:
+    app_units_changed: "{{ app_unit_files.changed or app_overrides.changed or app_overrides_removed.changed or app_config.changed }}"

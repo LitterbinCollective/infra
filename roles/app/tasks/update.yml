@@ -1,0 +1,26 @@
+- name: Update command is defined
+  ansible.builtin.assert:
+    that: a.update | length > 0
+    fail_msg: "apps/{{ a.name }}/app.yml has no update command"
+
+- name: Stop units
+  ansible.builtin.systemd_service:
+    name: "{{ item }}"
+    state: stopped
+  loop: "{{ app_units | map(attribute='instances') | flatten }}"
+  when: a.cutover | bool
+
+- name: Back up state
+  ansible.builtin.import_tasks: backup.yml
+
+- name: Run update  # noqa: command-instead-of-shell
+  ansible.builtin.shell: "{{ a.update }}"
+  args:
+    chdir: "{{ app_state_root }}"
+  become: true
+  become_user: "{{ a.user }}"
+  changed_when: true
+
+- name: Restart after update
+  ansible.builtin.set_fact:
+    app_restart_needed: true

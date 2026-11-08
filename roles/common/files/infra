@@ -1,0 +1,42 @@
+#!/bin/bash
+# single entry point for every infra run on this host: manual, timer or webhook
+set -euo pipefail
+
+[[ $EUID -eq 0 ]] || { echo "infra: run as root" >&2; exit 1; }
+
+# shellcheck source=/dev/null
+source /etc/infra/infra.env
+: "${INFRA_REPO:?}" "${INFRA_BRANCH:?}"
+
+venv=/opt/ansible
+ansible_version=$(cat /etc/infra/ansible-version 2>/dev/null || echo "${ANSIBLE_FALLBACK_VERSION:-14.6.0}")
+
+exec 9>/run/infra.lock
+if ! flock -n 9; then
+  echo "infra: another run is in progress" >&2
+  exit 75
+fi
+
+if ! "$venv/bin/python" -c 'import ansible' 2>/dev/null; then
+  echo "infra: (re)building $venv with ansible==$ansible_version" >&2
+  rm -rf "$venv"
+  python -m venv "$venv"
+  "$venv/bin/pip" install --quiet "ansible==$ansible_version"
+fi
+
+GITHUB_TOKEN=""
+if [[ -n "${GITHUB_APP_ID:-}" ]]; then
+  GITHUB_TOKEN=$(/usr/local/libexec/infra/gh-app-token)
+
+  export GIT_CONFIG_COUNT=1
+  export GIT_CONFIG_KEY_0="http.https://github.com/.extraheader"
+  GIT_CONFIG_VALUE_0="Authorization: Basic $(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 -w0)"
+  export GIT_CONFIG_VALUE_0
+fi
+export GITHUB_TOKEN
+
+exec "$venv/bin/ansible-pull" \
+  -U "https://github.com/$INFRA_REPO.git" \
+  -C "$INFRA_BRANCH" \
+  -d /var/lib/infra/checkout \
+  site.yml "$@"

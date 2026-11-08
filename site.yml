@@ -1,0 +1,10 @@
+- name: kilo
+  hosts: kilo
+  become: true
+  roles:
+    - role: common
+      tags: [common]
+
+    - { role: app, app_name: leaf, tags: [leaf] }
+    - { role: app, app_name: minecraft, tags: [minecraft] }
+    # paused: apps/catvox, apps/catvox-indev

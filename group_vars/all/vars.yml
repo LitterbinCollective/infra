@@ -1,0 +1,16 @@
+infra_repo: LitterbinCollective/infra
+infra_branch: master
+infra_pull_timer: false
+
+lb_backup_root: /var/backups/lb
+lb_keep_releases: 5
+
+base_packages:
+  - git
+  - curl
+  - jq
+  - openssl
+  - tar
+  - zstd
+  - rsync
+  - python

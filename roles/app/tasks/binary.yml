@@ -1,0 +1,63 @@
+- name: Binary release directory
+  ansible.builtin.set_fact:
+    app_release_dir: "{{ app_home }}/releases/{{ a.ref }}"
+    app_asset_name: "{{ a.asset | replace('{ref}', a.ref) }}"
+  when: a.ref | length > 0
+
+- name: Check for an existing release
+  ansible.builtin.stat:
+    path: "{{ app_release_dir }}/.lb-ready"
+  register: app_ready
+  when: app_release_dir | length > 0
+
+- name: Download release
+  when: app_release_dir | length > 0 and not app_ready.stat.exists
+  block:
+    - name: Look up GitHub release
+      ansible.builtin.uri:
+        url: "https://api.github.com/repos/{{ a.repo }}/releases/tags/{{ a.ref }}"
+        headers: "{{ app_gh_headers }}"
+      register: app_gh_release
+
+    - name: Pick asset
+      ansible.builtin.set_fact:
+        app_asset: "{{ app_gh_release.json.assets | selectattr('name', 'equalto', app_asset_name) | first | default({}) }}"
+
+    - name: Asset exists
+      ansible.builtin.assert:
+        that: app_asset | length > 0
+        fail_msg: "{{ a.repo }}@{{ a.ref }} has no asset named {{ app_asset_name }}"
+
+    - name: Clean release directory
+      ansible.builtin.file:
+        path: "{{ app_release_dir }}"
+        state: absent
+
+    - name: Release directory
+      ansible.builtin.file:
+        path: "{{ app_release_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Download asset
+      ansible.builtin.command:
+        argv: [curl, -fsSL, -K, "-", -H, "Accept: application/octet-stream", -o, "{{ app_release_dir }}.download", "{{ app_asset.url }}"]
+        stdin: "{{ ('header = \"Authorization: Bearer ' ~ lookup('env', 'GITHUB_TOKEN') ~ '\"') if lookup('env', 'GITHUB_TOKEN') else '' }}"
+      changed_when: true
+
+    - name: Unpack asset
+      ansible.builtin.unarchive:
+        src: "{{ app_release_dir }}.download"
+        dest: "{{ app_release_dir }}"
+        remote_src: true
+
+    - name: Remove download
+      ansible.builtin.file:
+        path: "{{ app_release_dir }}.download"
+        state: absent
+
+    - name: Mark release ready
+      ansible.builtin.file:
+        path: "{{ app_release_dir }}/.lb-ready"
+        state: touch
+        mode: "0644"
