@@ -4,7 +4,7 @@ tier: infra
 type: binary
 user: yumenoniwa
 repo: LitterbinCollective/yum
-ref: ""
+ref: v0.0.5
 asset: yum-linux-amd64.tar.gz
 after: [network.target, postgresql.service]
 state: [upload]
@@ -23,4 +23,4 @@ units:
   sftp:
     exec: "{current}/yum sftp -R {current}"
 replaces: [leaf-http, leaf-bep, leaf-sftp, leaf.target]
-cutover: false
+cutover: true
