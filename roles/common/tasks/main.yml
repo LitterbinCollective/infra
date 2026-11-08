@@ -90,3 +90,4 @@
     name: infra-pull.timer
     enabled: "{{ infra_pull_timer | bool }}"
     state: "{{ 'started' if infra_pull_timer | bool else 'stopped' }}"
+  when: not (ansible_check_mode and pull_units.changed)
