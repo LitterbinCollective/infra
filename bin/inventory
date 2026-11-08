@@ -26,9 +26,9 @@ for path in /etc/systemd/system/*.service /etc/systemd/system/*.target; do
   done
 done
 
-dangling=$(find /etc/systemd/system -xtype l -printf '%p -> %l\n')
+dangling=$(find /etc/systemd/system -xtype l -printf '- %p -> %l\n')
 if [[ -n $dangling ]]; then
   echo
   echo "Dangling links (enabled, but the unit file is gone):"
-  echo "$dangling" | sed 's/^/- /'
+  echo "$dangling"
 fi
