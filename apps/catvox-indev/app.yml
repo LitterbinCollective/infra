@@ -1,0 +1,29 @@
+description: foxtrot/catvox INDEV
+owner: "@LitterbinCollective/catvox"
+tier: infra
+type: node
+user: catvox
+repo: LitterbinCollective/foxtrot.ts
+ref: indev
+deploy_branch: indev
+# package.json pins @discordjs/opus to link:/srv/catvox/opus-0.10.0/, so that
+# directory has to stay until the fork lives in git. `build` is split up to
+# skip sentry:sourcemaps, which needs the catvox user's ~/.sentryclirc.
+build:
+  - corepack pnpm install --frozen-lockfile
+  - corepack pnpm run build:cpp
+  - corepack pnpm exec tsc
+  - corepack pnpm exec tsc-alias
+migrate: corepack pnpm run migrate
+state: [cache, cookies, configs]
+links:
+  cache: "{state}/cache"
+  cookies: "{state}/cookies"
+  configs: "{state}/configs"
+env:
+  NODE_ENV: production
+units:
+  catvox-indev:
+    exec: "/usr/bin/node --openssl-legacy-provider {current}/dist/manager/"
+replaces: [catvox-indev]
+cutover: false

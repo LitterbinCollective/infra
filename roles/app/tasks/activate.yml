@@ -1,0 +1,62 @@
+- name: Current release
+  ansible.builtin.stat:
+    path: "{{ app_home }}/current"
+  register: app_current
+
+- name: Links into state and config
+  ansible.builtin.file:
+    path: "{{ app_release_dir }}/{{ item.key }}"
+    src: "{{ item.value | replace('{state}', app_state_root) }}"
+    state: link
+    force: true
+  loop: "{{ a.links | dict2items }}"
+
+- name: Switch release
+  when: app_current.stat.lnk_source | default('') != app_release_dir
+  block:
+    - name: Stop units
+      ansible.builtin.systemd_service:
+        name: "{{ item }}"
+        state: stopped
+      loop: "{{ app_units | map(attribute='instances') | flatten }}"
+      when: a.cutover | bool
+
+    - name: Back up state
+      ansible.builtin.import_tasks: backup.yml
+      when: a.cutover | bool and a.backup.before_deploy | bool
+
+    - name: Migrate  # noqa: command-instead-of-shell
+      ansible.builtin.shell: "{{ a.migrate }}"
+      args:
+        chdir: "{{ app_release_dir }}"
+      environment: "{{ a.env }}"
+      become: true
+      become_user: "{{ a.user }}"
+      when: a.cutover | bool and a.migrate | length > 0
+      changed_when: true
+
+    - name: Point current at release
+      ansible.builtin.file:
+        path: "{{ app_home }}/current"
+        src: "{{ app_release_dir }}"
+        state: link
+        force: true
+
+    - name: Restart after switch
+      ansible.builtin.set_fact:
+        app_restart_needed: true
+
+- name: List releases for pruning
+  ansible.builtin.find:
+    paths: "{{ app_home }}/releases"
+    file_type: directory
+  register: app_releases
+
+- name: Prune old releases
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop: >-
+    {{ (app_releases.files | sort(attribute='mtime', reverse=true) | map(attribute='path')
+        | reject('equalto', app_release_dir) | reject('equalto', app_current.stat.lnk_source | default(''))
+        | list)[lb_keep_releases - 1:] }}

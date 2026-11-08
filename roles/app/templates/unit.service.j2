@@ -1,0 +1,29 @@
+# managed by infra (apps/{{ a.name }}) - owner: {{ a.owner or '?' }} - do not edit by hand
+[Unit]
+Description={{ u.description }}
+PartOf={{ app_target }}
+After={{ a.after | join(' ') }}
+
+[Service]
+Type=simple
+User={{ a.user }}
+{% for k, v in u.env | dictsort %}
+Environment="{{ k }}={{ v }}"
+{% endfor %}
+EnvironmentFile=-/etc/{{ a.name }}/env
+WorkingDirectory={{ u.working_dir }}
+ExecStart={{ u.exec }}
+{% if u.exec_stop %}
+ExecStop={{ u.exec_stop }}
+{% endif %}
+Restart={{ u.restart }}
+RestartSec={{ u.restart_sec }}
+{% if u.timeout_stop %}
+TimeoutStopSec={{ u.timeout_stop }}
+{% endif %}
+{% for p in u.writable %}
+ReadWritePaths={{ p }}
+{% endfor %}
+
+[Install]
+WantedBy={{ app_target }}

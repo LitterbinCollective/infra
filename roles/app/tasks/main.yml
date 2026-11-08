@@ -1,0 +1,109 @@
+- name: Load app definition
+  ansible.builtin.include_vars:
+    file: "{{ playbook_dir }}/apps/{{ app_name }}/app.yml"
+    name: app_raw
+
+# -e ref/rollback/update would otherwise apply to every app in the run.
+- name: Per-run arguments need --tags for exactly this app
+  ansible.builtin.assert:
+    that: ansible_run_tags == [app_name]
+    fail_msg: "-e ref/rollback/update require --tags {{ app_name }}"
+  when: ref is defined or rollback is defined or update is defined
+
+- name: Resolve app settings
+  ansible.builtin.set_fact:
+    a: "{{ app_defaults | combine(app_raw, {'name': app_name}, ({'ref': ref} if ref is defined else {}), recursive=true) }}"
+    app_home: "/opt/{{ app_name }}"
+    app_target: "lb-{{ app_name }}.target"
+    app_release_dir: ""
+    app_restart_needed: false
+    app_gh_headers: >-
+      {{ {'Accept': 'application/vnd.github+json'}
+         | combine({'Authorization': 'Bearer ' ~ lookup('env', 'GITHUB_TOKEN')} if lookup('env', 'GITHUB_TOKEN') else {}) }}
+
+- name: Resolve paths and units
+  ansible.builtin.set_fact:
+    app_state_root: "{{ a.state_root or '/srv/' ~ a.name }}"
+    app_units: "{{ a | lb_units(app_home, a.state_root or '/srv/' ~ a.name) }}"
+
+- name: Validate app definition
+  ansible.builtin.assert:
+    that:
+      - a.type in ['binary', 'node', 'external']
+      - a.user | length > 0
+      - a.units | length > 0
+      - a.type == 'external' or a.repo | length > 0
+
+- name: Service user
+  ansible.builtin.user:
+    name: "{{ a.user }}"
+    system: true
+    create_home: false
+
+- name: Code directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  loop: ["{{ app_home }}", "{{ app_home }}/releases"]
+  when: a.type != 'external'
+
+- name: State directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ a.user }}"
+    group: "{{ a.user }}"
+    mode: "0750"
+  loop: "{{ [app_state_root] + (a.state | map('regex_replace', '^', app_state_root ~ '/') | list) }}"
+
+- name: Config directory
+  ansible.builtin.file:
+    path: "/etc/{{ a.name }}"
+    state: directory
+    owner: root
+    group: "{{ a.user }}"
+    mode: "0750"
+
+- name: Config files
+  ansible.builtin.template:
+    src: "{{ playbook_dir }}/apps/{{ a.name }}/{{ item.src | default(item) }}"
+    dest: "{{ item.dest | default('/etc/' ~ a.name ~ '/' ~ (item.src | default(item) | basename | regex_replace('\\.j2$', ''))) }}"
+    owner: root
+    group: "{{ a.user }}"
+    mode: "{{ item.mode | default('0640') }}"
+  loop: "{{ a.config }}"
+  register: app_config
+
+- name: Units
+  ansible.builtin.import_tasks: units.yml
+
+- name: Check ref against the deploy branch
+  ansible.builtin.import_tasks: verify_ref.yml
+  when: a.type != 'external' and a.ref | length > 0 and a.deploy_branch | length > 0 and not (rollback | default(false) | bool)
+
+- name: Roll back
+  ansible.builtin.import_tasks: rollback.yml
+  when: rollback | default(false) | bool
+
+- name: Fetch binary release
+  ansible.builtin.import_tasks: binary.yml
+  when: a.type == 'binary' and not (rollback | default(false) | bool)
+
+- name: Build node release
+  ansible.builtin.import_tasks: node.yml
+  when: a.type == 'node' and not (rollback | default(false) | bool)
+
+- name: Activate release
+  ansible.builtin.import_tasks: activate.yml
+  when: app_release_dir | length > 0
+
+- name: Update external app
+  ansible.builtin.import_tasks: update.yml
+  when: a.type == 'external' and update | default(false) | bool
+
+- name: Cut over and (re)start
+  ansible.builtin.import_tasks: cutover.yml
+  when: a.cutover | bool

@@ -1,0 +1,26 @@
+- name: Backup directory
+  ansible.builtin.file:
+    path: "{{ lb_backup_root }}/{{ a.name }}"
+    state: directory
+    mode: "0700"
+
+- name: Archive state
+  ansible.builtin.command:
+    argv: >-
+      {{ ['tar', '--zstd', '-C', '/', '-cf',
+          lb_backup_root ~ '/' ~ a.name ~ '/' ~ now(utc=true, fmt='%Y%m%dT%H%M%SZ') ~ '.tar.zst']
+         + (a.backup.exclude | map('regex_replace', '^', '--exclude=') | list)
+         + [app_state_root | regex_replace('^/', ''), 'etc/' ~ a.name] }}
+  changed_when: true
+
+- name: List backups
+  ansible.builtin.find:
+    paths: "{{ lb_backup_root }}/{{ a.name }}"
+    patterns: "*.tar.zst"
+  register: app_backups
+
+- name: Prune old backups
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop: "{{ (app_backups.files | sort(attribute='mtime', reverse=true) | map(attribute='path') | list)[a.backup.keep :] }}"

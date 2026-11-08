@@ -1,0 +1,20 @@
+description: minecraft
+owner: "@LitterbinCollective/minecraft"
+tier: personal
+type: external
+user: minecraft
+state_root: /srv/minecraft
+units:
+  minecraft:
+    instances: [home, beehive, beehive2]
+    working_dir: "{state}/%i"
+    exec: "{state}/%i/start.sh"
+    writable: ["{state}/%i"]
+    restart: on-failure
+    timeout_stop: 120
+replaces: [minecraft@home, minecraft@beehive, minecraft@beehive2]
+backup:
+  before_deploy: true
+  exclude: ["*/logs", "*/cache"]
+  keep: 5
+cutover: false

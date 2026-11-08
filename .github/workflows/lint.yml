@@ -1,0 +1,20 @@
+name: lint
+
+on:
+  pull_request:
+  push:
+    branches: [stable, master]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: |
+          pip install "ansible==$(sed -n 's/^ansible_pip_version: "\(.*\)"/\1/p' group_vars/all/versions.yml)" ansible-lint
+      - run: ansible-playbook site.yml --syntax-check
+      - run: ansible-lint
+      - run: shellcheck roles/common/files/infra roles/common/files/gh-app-token bin/inventory

@@ -1,0 +1,92 @@
+- name: Upgrade the whole system
+  community.general.pacman:
+    update_cache: true
+    upgrade: true
+  when: os_upgrade | default(false) | bool
+
+- name: Base packages
+  community.general.pacman:
+    name: "{{ base_packages }}"
+    state: present
+
+- name: Check for pending reboot
+  ansible.builtin.shell: pacman -Qqo "/usr/lib/modules/$(uname -r)/vmlinuz"
+  register: running_kernel_modules
+  changed_when: false
+  failed_when: false
+
+- name: Report pending reboot
+  ansible.builtin.debug:
+    msg: "Kernel was upgraded: reboot needed (announce it first)."
+  when: running_kernel_modules.rc != 0
+
+- name: Infra directories
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "{{ item.mode }}"
+  loop:
+    - { path: /etc/infra, mode: "0700" }
+    - { path: /var/lib/infra, mode: "0700" }
+    - { path: /usr/local/libexec/infra, mode: "0755" }
+    - { path: "{{ lb_backup_root }}", mode: "0700" }
+
+- name: Infra settings
+  ansible.builtin.template:
+    src: infra.env.j2
+    dest: /etc/infra/infra.env
+    mode: "0600"
+
+- name: Pinned Ansible version
+  ansible.builtin.copy:
+    content: "{{ ansible_pip_version }}\n"
+    dest: /etc/infra/ansible-version
+    mode: "0644"
+
+- name: Infra wrapper and helpers
+  ansible.builtin.copy:
+    src: "{{ item.src }}"
+    dest: "{{ item.dest }}"
+    mode: "0755"
+  loop:
+    - { src: infra, dest: /usr/local/bin/infra }
+    - { src: gh-app-token, dest: /usr/local/libexec/infra/gh-app-token }
+
+- name: Ansible at the pinned version
+  ansible.builtin.pip:
+    name: "ansible=={{ ansible_pip_version }}"
+    virtualenv: /opt/ansible
+
+- name: Shared hardening drop-in directory
+  ansible.builtin.file:
+    path: /etc/systemd/system/lb-.service.d
+    state: directory
+    mode: "0755"
+
+- name: Shared hardening drop-in
+  ansible.builtin.copy:
+    src: 10-hardening.conf
+    dest: /etc/systemd/system/lb-.service.d/10-hardening.conf
+    mode: "0644"
+  register: hardening
+
+- name: Pull timer units
+  ansible.builtin.copy:
+    src: "{{ item }}"
+    dest: "/etc/systemd/system/{{ item }}"
+    mode: "0644"
+  loop: [infra-pull.service, infra-pull.timer]
+  register: pull_units
+
+- name: Reload systemd
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+  when: hardening.changed or pull_units.changed
+
+- name: Pull timer state
+  ansible.builtin.systemd_service:
+    name: infra-pull.timer
+    enabled: "{{ infra_pull_timer | bool }}"
+    state: "{{ 'started' if infra_pull_timer | bool else 'stopped' }}"

@@ -1,0 +1,6 @@
+# managed by infra (apps/{{ a.name }}) - owner: {{ a.owner or '?' }} - do not edit by hand
+[Unit]
+Description={{ a.description or a.name }}
+
+[Install]
+WantedBy=multi-user.target

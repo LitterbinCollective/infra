@@ -1,0 +1,2 @@
+# the role runs once per app in the same play
+allow_duplicates: true

@@ -1,0 +1,21 @@
+- name: Current release
+  ansible.builtin.stat:
+    path: "{{ app_home }}/current"
+  register: app_current
+
+- name: List releases
+  ansible.builtin.find:
+    paths: "{{ app_home }}/releases"
+    file_type: directory
+  register: app_releases
+
+- name: Pick previous release
+  ansible.builtin.set_fact:
+    app_release_dir: >-
+      {{ app_releases.files | sort(attribute='mtime', reverse=true) | map(attribute='path')
+         | reject('equalto', app_current.stat.lnk_source | default('')) | first | default('') }}
+
+- name: A previous release exists
+  ansible.builtin.assert:
+    that: app_release_dir | length > 0
+    fail_msg: "No release to roll back to in {{ app_home }}/releases"

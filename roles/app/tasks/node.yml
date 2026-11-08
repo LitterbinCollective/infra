@@ -1,0 +1,127 @@
+- name: Git credentials for this run
+  ansible.builtin.set_fact:
+    app_git_env: >-
+      {{ {'GIT_CONFIG_COUNT': '1',
+          'GIT_CONFIG_KEY_0': lookup('env', 'GIT_CONFIG_KEY_0'),
+          'GIT_CONFIG_VALUE_0': lookup('env', 'GIT_CONFIG_VALUE_0')}
+         if lookup('env', 'GIT_CONFIG_VALUE_0') else {} }}
+    app_build_home: "/var/cache/lb/{{ a.name }}"
+
+- name: Resolve ref to a commit  # noqa: command-instead-of-module
+  ansible.builtin.command: git ls-remote https://github.com/{{ a.repo }}.git {{ a.ref }} {{ a.ref }}^{}
+  environment: "{{ app_git_env }}"
+  register: app_ls_remote
+  changed_when: false
+  when: a.ref | length > 0 and a.ref is not match('^[0-9a-f]{40}$')
+
+- name: Pick commit
+  ansible.builtin.set_fact:
+    app_sha: >-
+      {{ a.ref if a.ref is match('^[0-9a-f]{40}$') else
+         ((app_ls_remote.stdout_lines | select('search', '\^\{\}$') | list) or app_ls_remote.stdout_lines)
+         | first | default('') | split | first | default('') }}
+  when: a.ref | length > 0
+
+- name: Ref exists
+  ansible.builtin.assert:
+    that: app_sha | length == 40
+    fail_msg: "{{ a.repo }} has no ref {{ a.ref }}"
+  when: a.ref | length > 0
+
+- name: Node release directory
+  ansible.builtin.set_fact:
+    app_release_dir: "{{ app_home }}/releases/{{ app_sha[:12] }}"
+  when: a.ref | length > 0
+
+- name: Check for an existing release
+  ansible.builtin.stat:
+    path: "{{ app_release_dir }}/.lb-ready"
+  register: app_ready
+  when: app_release_dir | length > 0
+
+- name: Build release
+  when: app_release_dir | length > 0 and not app_ready.stat.exists
+  block:
+    - name: Clean release directory
+      ansible.builtin.file:
+        path: "{{ app_release_dir }}"
+        state: absent
+
+    - name: Release and build cache directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: "{{ a.user }}"
+        group: "{{ a.user }}"
+        mode: "0755"
+      loop: ["{{ app_release_dir }}", "{{ app_build_home }}"]
+
+    # builds run as the app user: npm/pnpm install scripts are arbitrary code.
+    - name: Check out commit  # noqa: command-instead-of-module
+      ansible.builtin.shell: >-
+        git init -q &&
+        git remote add origin https://github.com/{{ a.repo }}.git &&
+        git fetch -q --depth 1 origin {{ app_sha }} &&
+        git checkout -q FETCH_HEAD
+      args:
+        chdir: "{{ app_release_dir }}"
+      environment: "{{ app_git_env | combine({'HOME': app_build_home}) }}"
+      become: true
+      become_user: "{{ a.user }}"
+      changed_when: true
+
+    - name: Build  # noqa: command-instead-of-shell
+      ansible.builtin.shell: "{{ item }}"
+      args:
+        chdir: "{{ app_release_dir }}"
+      environment:
+        HOME: "{{ app_build_home }}"
+      become: true
+      become_user: "{{ a.user }}"
+      loop: "{{ a.build }}"
+      changed_when: true
+
+    - name: Record Node version used for the build
+      ansible.builtin.shell: node --version > .lb-node
+      args:
+        chdir: "{{ app_release_dir }}"
+      become: true
+      become_user: "{{ a.user }}"
+      changed_when: true
+
+    - name: Mark release ready
+      ansible.builtin.file:
+        path: "{{ app_release_dir }}/.lb-ready"
+        state: touch
+        mode: "0644"
+
+# native addons (opus) are tied to the node ABI they were compiled for, so a
+# node upgrade needs a rebuild of whatever is currently running
+- name: Current release
+  ansible.builtin.stat:
+    path: "{{ app_home }}/current/.lb-ready"
+  register: app_current_ready
+
+- name: Compare running release's Node version
+  ansible.builtin.shell: test "$(node --version)" = "$(cat {{ app_home }}/current/.lb-node)"
+  register: app_node_same
+  changed_when: false
+  failed_when: false
+  when: app_current_ready.stat.exists
+
+- name: Rebuild current release for the new Node
+  when: app_current_ready.stat.exists and app_node_same.rc != 0
+  block:
+    - name: Rebuild native modules
+      ansible.builtin.shell: "{{ a.rebuild }} && node --version > .lb-node"
+      args:
+        chdir: "{{ app_home }}/current/"
+      environment:
+        HOME: "{{ app_build_home }}"
+      become: true
+      become_user: "{{ a.user }}"
+      changed_when: true
+
+    - name: Restart after rebuild
+      ansible.builtin.set_fact:
+        app_restart_needed: true

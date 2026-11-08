@@ -1,0 +1,29 @@
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+    steps:
+      - run: pacman -Syu --noconfirm --needed git go nodejs pnpm ffmpeg pkgconf gcc make github-cli
+      - uses: actions/checkout@v4
+      - run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+      - run: make frontend
+      - run: make backend
+      - run: tar -czf yum-linux-amd64.tar.gz -C bin yum frontend
+      - run: |
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" yum-linux-amd64.tar.gz --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" yum-linux-amd64.tar.gz --generate-notes
+          fi
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}

@@ -1,0 +1,26 @@
+description: leaf (yum)
+owner: "@LitterbinCollective/leaf"
+tier: infra
+type: binary
+user: yumenoniwa
+repo: LitterbinCollective/yum
+ref: ""
+asset: yum-linux-amd64.tar.gz
+after: [network.target, postgresql.service]
+state: [upload]
+links:
+  upload: "{state}/upload"
+  config.json: "{state}/config.json"
+  .bep_cert: "{state}/.bep_cert"
+  .bep_key: "{state}/.bep_key"
+  .pk: "{state}/.pk"
+  .ssh_host_ed25519_key: "{state}/.ssh_host_ed25519_key"
+units:
+  http:
+    exec: "{current}/yum http -R {current} -D"
+  bep:
+    exec: "{current}/yum bep -R {current} -D"
+  sftp:
+    exec: "{current}/yum sftp -R {current}"
+replaces: [leaf-http, leaf-bep, leaf-sftp, leaf.target]
+cutover: false

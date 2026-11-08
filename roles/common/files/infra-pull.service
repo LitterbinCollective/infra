@@ -1,0 +1,10 @@
+[Unit]
+Description=Re-apply the base system from the infra repo
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/infra --tags common
+# 75 = a manual run holds the lock; try again next time.
+SuccessExitStatus=75
