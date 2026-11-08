@@ -4,8 +4,10 @@ set -euo pipefail
 
 [[ $EUID -eq 0 ]] || { echo "infra: run as root" >&2; exit 1; }
 
+set -a
 # shellcheck source=/dev/null
 source /etc/infra/infra.env
+set +a
 : "${INFRA_REPO:?}" "${INFRA_BRANCH:?}"
 
 venv=/opt/ansible

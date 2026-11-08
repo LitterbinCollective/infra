@@ -6,7 +6,7 @@
 # -e ref/rollback/update would otherwise apply to every app in the run.
 - name: Per-run arguments need --tags for exactly this app
   ansible.builtin.assert:
-    that: ansible_run_tags == [app_name]
+    that: ansible_run_tags | list == [app_name]
     fail_msg: "-e ref/rollback/update require --tags {{ app_name }}"
   when: ref is defined or rollback is defined or update is defined
 
