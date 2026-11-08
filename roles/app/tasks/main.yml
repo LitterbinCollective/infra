@@ -56,7 +56,7 @@
     state: directory
     owner: "{{ a.user }}"
     group: "{{ a.user }}"
-    mode: "0750"
+    mode: "{{ omit if a.type == 'external' else '0750' }}"
   loop: "{{ [app_state_root] + (a.state | map('regex_replace', '^', app_state_root ~ '/') | list) }}"
 
 - name: Config directory
