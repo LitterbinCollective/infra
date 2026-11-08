@@ -1,0 +1,13 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended"],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "managerFilePatterns": ["/^group_vars/all/versions\\.yml$/"],
+      "matchStrings": ["ansible_pip_version: \"(?<currentValue>[^\"]+)\""],
+      "depNameTemplate": "ansible",
+      "datasourceTemplate": "pypi"
+    }
+  ]
+}

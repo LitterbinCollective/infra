@@ -1,0 +1,18 @@
+#!/bin/bash
+# prints a GitHub App installation token (valid ~1h)
+set -euo pipefail
+: "${GITHUB_APP_ID:?}" "${GITHUB_APP_INSTALLATION_ID:?}" "${GITHUB_APP_KEY:?}"
+
+b64url() { openssl base64 -A | tr '+/' '-_' | tr -d '='; }
+
+now=$(date +%s)
+header=$(printf '{"alg":"RS256","typ":"JWT"}' | b64url)
+# iat is backdated to tolerate clock drift; GitHub caps exp at 10 minutes.
+payload=$(printf '{"iat":%d,"exp":%d,"iss":"%s"}' $((now - 60)) $((now + 540)) "$GITHUB_APP_ID" | b64url)
+sig=$(printf '%s.%s' "$header" "$payload" | openssl dgst -sha256 -sign "$GITHUB_APP_KEY" -binary | b64url)
+
+curl -fsS -X POST \
+  -H "Authorization: Bearer $header.$payload.$sig" \
+  -H "Accept: application/vnd.github+json" \
+  "https://api.github.com/app/installations/$GITHUB_APP_INSTALLATION_ID/access_tokens" \
+  | jq -er .token

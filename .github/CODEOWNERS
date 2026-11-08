@@ -1,0 +1,4 @@
+*                      @LitterbinCollective/higherups
+/apps/catvox/          @LitterbinCollective/catvox
+/apps/catvox-indev/    @LitterbinCollective/catvox
+/apps/leaf/            @LitterbinCollective/leaf

@@ -1,0 +1,28 @@
+app_defaults:
+  description: ""
+  owner: ""
+  tier: infra
+  type: binary
+  repo: ""
+  ref: ""
+  deploy_branch: master
+  asset: ""
+  build: []
+  migrate: ""
+  rebuild: npm rebuild
+  update: ""
+  config: []
+  links: {}
+  state: []
+  state_root: ""
+  writable: []
+  env: {}
+  hardening_overrides: []
+  after: [network.target]
+  units: {}
+  replaces: []
+  cutover: false
+  backup:
+    before_deploy: true
+    exclude: []
+    keep: 10

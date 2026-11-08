@@ -1,0 +1,29 @@
+description: foxtrot/catvox
+owner: "@LitterbinCollective/catvox"
+tier: infra
+type: node
+user: catvox
+repo: LitterbinCollective/foxtrot.ts
+ref: master
+build:
+  - npm ci
+  - npm run build
+migrate: ""
+state: [cache, cookies, configs]
+# catvox expects its state next to its code. the release dir is read-only at
+# runtime, so these are symlinked out into /srv/catvox. dev.sqlite3 relies on
+# SQLite resolving the symlink when it names its journal file
+links:
+  cache: "{state}/cache"
+  cookies: "{state}/cookies"
+  configs: "{state}/configs"
+  config.json: "{state}/config.json"
+  dev.sqlite3: "{state}/dev.sqlite3"
+env:
+  NODE_ENV: production
+units:
+  catvox:
+    # this flag is needed for deezer to work; some people use it unironically
+    exec: "/usr/bin/node --openssl-legacy-provider {current}/dist/manager/"
+replaces: [catvox]
+cutover: false

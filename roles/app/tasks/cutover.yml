@@ -1,0 +1,32 @@
+# data has to be moved into the new layout by hand first; this marker is the
+# admin saying it's done, so flipping `cutover` can't start an app on empty state
+- name: State has been migrated
+  ansible.builtin.stat:
+    path: "{{ app_state_root }}/.lb-migrated"
+  register: app_migrated
+
+- name: Refuse to cut over without migrated state
+  ansible.builtin.assert:
+    that: app_migrated.stat.exists
+    fail_msg: "Move {{ a.name }}'s data into {{ app_state_root }}, then: touch {{ app_state_root }}/.lb-migrated"
+
+- name: Stop and disable legacy units
+  ansible.builtin.systemd_service:
+    name: "{{ item }}"
+    state: stopped
+    enabled: false
+  loop: "{{ a.replaces }}"
+  register: app_legacy
+  failed_when: app_legacy.failed and 'Could not find the requested service' not in app_legacy.msg | default('')
+
+- name: Enable target
+  ansible.builtin.systemd_service:
+    name: "{{ app_target }}"
+    enabled: true
+
+- name: Enable and start units
+  ansible.builtin.systemd_service:
+    name: "{{ item }}"
+    enabled: true
+    state: "{{ 'restarted' if (app_restart_needed or app_units_changed) else 'started' }}"
+  loop: "{{ app_units | map(attribute='instances') | flatten }}"

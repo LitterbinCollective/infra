@@ -1,0 +1,11 @@
+- name: Compare ref with the deploy branch
+  ansible.builtin.uri:
+    url: "https://api.github.com/repos/{{ a.repo }}/compare/{{ a.deploy_branch }}...{{ a.ref }}"
+    headers: "{{ app_gh_headers }}"
+  register: app_compare
+
+- name: Ref is on the deploy branch
+  ansible.builtin.assert:
+    that: app_compare.json.status in ['identical', 'behind']
+    fail_msg: "{{ a.repo }}@{{ a.ref }} is not on {{ a.deploy_branch }} (status: {{ app_compare.json.status }})"
+    quiet: true

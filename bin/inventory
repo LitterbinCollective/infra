@@ -1,0 +1,34 @@
+#!/bin/bash
+set -euo pipefail
+
+echo "| Unit | User | Enabled | Active | Since | Description |"
+echo "|---|---|---|---|---|---|"
+
+for path in /etc/systemd/system/*.service /etc/systemd/system/*.target; do
+  [[ -f $path && ! -L $path ]] || continue
+  unit=$(basename "$path")
+  case $unit in
+    lb-*) continue ;;
+    *@.service)
+      instances=$(systemctl list-units --all --plain --no-legend "${unit%@.service}@*.service" | awk '{print $1}')
+      [[ -n $instances ]] || instances=$unit
+      ;;
+    *) instances=$unit ;;
+  esac
+  for u in $instances; do
+    declare -A p=()
+    while IFS='=' read -r k v; do p[$k]=$v; done < <(
+      systemctl show "$u" -p User,UnitFileState,ActiveState,SubState,StateChangeTimestamp,Description
+    )
+    printf '| %s | %s | %s | %s/%s | %s | %s |\n' "$u" "${p[User]:--}" "${p[UnitFileState]:--}" \
+      "${p[ActiveState]:-}" "${p[SubState]:-}" "${p[StateChangeTimestamp]:--}" "${p[Description]:-}"
+    unset p
+  done
+done
+
+dangling=$(find /etc/systemd/system -xtype l -printf '- %p -> %l\n')
+if [[ -n $dangling ]]; then
+  echo
+  echo "Dangling links (enabled, but the unit file is gone):"
+  echo "$dangling"
+fi
